@@ -28,8 +28,8 @@ class TopicModel {
     val nTopic = MutableMap[Int, Int]().withDefaultValue(0)
     val words = scala.collection.mutable.Set[String]()
 
-    for{doc <- 0 until tokenizedDocuments.size
-        word <- 0 until tokenizedDocuments(doc).size
+    for {doc <- 0 until tokenizedDocuments.size
+         word <- 0 until tokenizedDocuments(doc).size
     } {
       nDocTopic(doc, z(doc)(word)) += 1
       nWordTopic(tokenizedDocuments(doc)(word), z(doc)(word)) += 1
@@ -46,34 +46,37 @@ class TopicModel {
     val (nDocTopic, nWordTopic, nTopic, words) = initializeCounters(tokenizedDocuments, z)
     val numWords = words.size
 
-    for {i <- 0 until iterations
-         doc <- 0 until tokenizedDocuments.size
-         word <- 0 until tokenizedDocuments(doc).size
-    } {
-      // lower counters
-      nDocTopic(doc, z(doc)(word)) -= 1
-      nWordTopic(tokenizedDocuments(doc)(word), z(doc)(word)) -= 1
-      nTopic(z(doc)(word)) -= 1
+    for {i <- 0 until iterations} {
+      println(i)
+      for {
+        doc <- 0 until tokenizedDocuments.size
+        word <- 0 until tokenizedDocuments(doc).size
+      } {
+        // lower counters
+        nDocTopic(doc, z(doc)(word)) -= 1
+        nWordTopic(tokenizedDocuments(doc)(word), z(doc)(word)) -= 1
+        nTopic(z(doc)(word)) -= 1
 
-      val topicProbabilities = for{topic <- 0 until K} yield {
-        val prob = (nDocTopic(doc, topic) + alpha) * (nWordTopic(tokenizedDocuments(doc)(word), topic) + beta) / (nTopic(topic) + beta * numWords)
-        topic -> prob
+        val topicProbabilities = for {topic <- 0 until K} yield {
+          val prob = (nDocTopic(doc, topic) + alpha) * (nWordTopic(tokenizedDocuments(doc)(word), topic) + beta) / (nTopic(topic) + beta * numWords)
+          topic -> prob
+        }
+
+        val distribution = Distribution.discrete(topicProbabilities: _*)
+        val newTopic = distribution.sample(1).head
+        z(doc)(word) = newTopic
+        nDocTopic(doc, z(doc)(word)) += 1
+        nWordTopic(tokenizedDocuments(doc)(word), z(doc)(word)) += 1
+        nTopic(z(doc)(word)) += 1
       }
-
-      val distribution = Distribution.discrete(topicProbabilities: _*)
-      val newTopic = distribution.sample(1).head
-      z(doc)(word) = newTopic
-      nDocTopic(doc, z(doc)(word)) += 1
-      nWordTopic(tokenizedDocuments(doc)(word), z(doc)(word)) += 1
-      nTopic(z(doc)(word)) += 1
     }
 
     val pDocTopic: Map[(Int, Int), Double] =
       (for {doc <- 0 until tokenizedDocuments.size
             topic <- 0 until K
-    } yield {
-      (doc -> topic) -> (nDocTopic((doc, topic)) + alpha) / ((0 until K).map{k => nDocTopic((doc, k))+alpha}.sum)
-    })(breakOut)
+      } yield {
+        (doc -> topic) -> (nDocTopic((doc, topic)) + alpha) / ((0 until K).map { k => nDocTopic((doc, k)) + alpha}.sum)
+      })(breakOut)
 
     val pWordTopic: Map[(String, Int), Double] =
       (for {word <- words
@@ -88,9 +91,9 @@ class TopicModel {
 
   def inferTopics(doc: String, alpha: Double, beta: Double, K: Int, pWordTopic: MutableMap[(String, Int), Double]) = {
     val tokens = tokenize(doc)
-    val topicCounts =  MutableMap[Int, Double]().withDefaultValue(0.0)
+    val topicCounts = MutableMap[Int, Double]().withDefaultValue(0.0)
     for {word <- tokens
-      topic <- 0 until K
+         topic <- 0 until K
     } {
       topicCounts(topic) += pWordTopic(word, topic)
     }
@@ -98,7 +101,7 @@ class TopicModel {
     val topicProp: Map[Int, Double] =
       (for {topic <- 0 until K
       } yield {
-        topic -> (topicCounts(topic) + alpha) / ((0 until K).map{k => topicCounts(k)+alpha}.sum)
+        topic -> (topicCounts(topic) + alpha) / ((0 until K).map { k => topicCounts(k) + alpha}.sum)
       })(breakOut)
 
     topicProp
