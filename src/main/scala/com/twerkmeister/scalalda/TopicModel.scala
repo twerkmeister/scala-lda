@@ -19,7 +19,7 @@ class TopicModel {
   def buildVocab(tokenizedDocuments: Array[Array[String]]): (Array[Array[String]], MutableHashMap[String, Int]) = {
     val numDocs = tokenizedDocuments.size
     val minRatio = 0.005
-    val maxRatio = 0.3
+    val maxRatio = 0.25
 
     val words = scala.collection.mutable.Set[String]()
     val documentFrequency = MutableMap[String, Int]().withDefaultValue(0)
@@ -36,7 +36,8 @@ class TopicModel {
     val documentRatio = documentFrequency.mapValues{count => count.toDouble / numDocs}
 
     words.foreach{ word =>
-      val passes = word.size > 2 && documentRatio(word) >= minRatio && documentRatio(word) <= maxRatio
+//      val passes = word.size > 2 && documentRatio(word) >= minRatio && documentRatio(word) <= maxRatio
+      val passes = word.size > 2 && documentFrequency(word) > 1 && documentRatio(word) <= maxRatio
       if(passes) vocab(word) = vocab.size
       else filteredOut.add(word)
     }
@@ -130,11 +131,11 @@ class TopicModel {
       docI += 1
     }
 
-    docI = 0
-    while (docI < numDocs){
-      val countToProb: DenseVector[Double] = ((phi(docI, ::) + alpha) / (sum(phi(docI, ::).t) + K * alpha)).t
-      phi(docI, ::) := countToProb.t
-      docI += 1
+    var topicI = 0
+    while (topicI < K){
+      val countToProb: DenseVector[Double] = ((phi(topicI, ::) + alpha) / (sum(phi(topicI, ::).t) + K * alpha)).t
+      phi(topicI, ::) := countToProb.t
+      topicI += 1
     }
 
     (theta, phi, vocab)
