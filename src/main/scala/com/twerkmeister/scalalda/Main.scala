@@ -7,7 +7,7 @@ object Main extends App {
   val folder = "/home/vegeboy/workspace/playground/articles"
   val articles = new File(folder).listFiles()
     .filter(f => f.getName().endsWith(".txt"))
-    .take(100)
+    .take(1000)
     .map{docFile => Source.fromFile(docFile).getLines().mkString("\n")}
 
   val tm = new TopicModel

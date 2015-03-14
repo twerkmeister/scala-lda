@@ -96,6 +96,12 @@ class TopicModel {
         val docSize = tokenizedDocuments(docI).size
         while(wordI < docSize ){
           val vocabIndex = vocab(tokenizedDocuments(docI)(wordI))
+          val oldTopic = z(docI)(wordI)
+
+          //decrement counts of old topic assignment
+          phi(oldTopic, vocabIndex) -= 1.0
+          theta(docI, oldTopic) -= 1.0
+          topicSums(oldTopic) -= 1.0
 
           val docTopicRow: DenseVector[Double] = theta(docI, ::).t
           val topicWordCol: DenseVector[Double] = phi(::, vocabIndex)
@@ -103,22 +109,13 @@ class TopicModel {
           val normalizingConstant = sum(params)
           val normalizedParams = params / normalizingConstant
 
-          val oldTopic = z(docI)(wordI)
-
           val newTopic = ProbabilityDistribution.drawFrom(normalizedParams)
+          z(docI)(wordI) = newTopic
+          //increment counts to due to reassignment to new topic
+          phi(newTopic, vocabIndex) += 1.0
+          theta(docI, newTopic) += 1.0
+          topicSums(newTopic) += 1.0
 
-          if (oldTopic != newTopic) {
-            z(docI)(wordI) = newTopic
-            //increment counts to due to reassignment to new topic
-            phi(newTopic, vocabIndex) += 1.0
-            theta(docI, newTopic) += 1.0
-            topicSums(newTopic) += 1.0
-
-            //decrement counts of old topic assignment that has been changed
-            phi(oldTopic, vocabIndex) -= 1.0
-            theta(docI, oldTopic) -= 1.0
-            topicSums(oldTopic) -= 1.0
-          }
           wordI += 1
         }
         docI +=1
