@@ -11,7 +11,7 @@ object Main extends App {
     .map{docFile => Source.fromFile(docFile).getLines().mkString("\n")}
 
   val tm = new TopicModel
-  val (pDocTopic, pWordTopic) = tm.run(articles, 0.01, 0.01, 100)
+  val (theta, phi, vocab) = tm.run(articles, 0.01, 0.01, 100)
   println("done")
-  println(pDocTopic(0).mkString("\n"))
+  println(theta(0, ::))
 }

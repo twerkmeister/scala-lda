@@ -1,11 +1,12 @@
 package com.twerkmeister.scalalda
 
-import scala.collection.immutable.SortedMap
-import scala.util.matching.Regex
-import scala.util.Random
-import scala.collection.mutable.{Map => MutableMap}
-import scala.collection.breakOut
-import probability_monad.Distribution
+
+import breeze.stats.distributions.Multinomial
+
+import scala.util.{Try, Random, Success, Failure}
+import breeze.linalg._
+import breeze.numerics._
+import scala.collection.mutable.{Map => MutableMap, HashMap => MutableHashMap}
 
 class TopicModel {
   val iterations = 100
@@ -15,131 +16,130 @@ class TopicModel {
     document.split(r)
   }
 
-  def filterWords(tokenizedDocuments: Array[Array[String]]): Array[Array[String]] = {
+  def buildVocab(tokenizedDocuments: Array[Array[String]]): (Array[Array[String]], MutableHashMap[String, Int]) = {
     val numDocs = tokenizedDocuments.size
     val minRatio = 0.005
     val maxRatio = 0.3
+
+    val words = scala.collection.mutable.Set[String]()
     val documentFrequency = MutableMap[String, Int]().withDefaultValue(0)
-    val filteredOut = scala.collection.mutable.Set[String]()
+    val filteredOut = scala.collection.mutable.SortedSet[String]()
+    val vocab = MutableHashMap[String, Int]()
+
     for {doc <- tokenizedDocuments
-         words = doc.toSet
-         word <- words
+         word <- doc.toSet[String]
     } {
       documentFrequency(word) += 1
+      words += word
     }
+
     val documentRatio = documentFrequency.mapValues{count => count.toDouble / numDocs}
-    val filteredTokenizedDocuments = tokenizedDocuments.map{tokens => tokens.filter{ token =>
-      val passes = token.size > 2 && documentRatio(token) >= minRatio && documentRatio(token) <= maxRatio
-      if(! passes) filteredOut.add(token)
-      passes
-    }}
+
+    words.foreach{ word =>
+      val passes = word.size > 2 && documentRatio(word) >= minRatio && documentRatio(word) <= maxRatio
+      if(passes) vocab(word) = vocab.size
+      else filteredOut.add(word)
+    }
+    println(s"vocab size: ${vocab.size}")
     println("filtered out:\n===========")
     println(filteredOut.mkString(", "))
-    filteredTokenizedDocuments
+
+
+    (tokenizedDocuments.map{tokens => tokens.filter{ token => vocab.contains(token)}}, vocab)
   }
 
-  def initializeZ(tokenizedDocuments: Array[Array[String]], k: Int): Array[Array[Int]] = {
+  def initializeZ(tokenizedDocuments: Array[Array[String]], K: Int): Array[Array[Int]] = {
     tokenizedDocuments.map { doc =>
       doc.map { token =>
-        Random.nextInt(k)
+        Random.nextInt(K)
       }
     }
   }
 
-  def initializeCounters(tokenizedDocuments: Array[Array[String]], z: Array[Array[Int]], K: Int) = {
-    val nDocTopic: MutableMap[Int, MutableMap[Int, Int]] =
-      (0 until tokenizedDocuments.size).map(i => i -> MutableMap[Int,Int]().withDefaultValue(0))(breakOut)
-    val nTopicWord: MutableMap[Int, MutableMap[String,Int]] =
-      (0 until K).map(i => i -> MutableMap[String,Int]().withDefaultValue(0))(breakOut)
-    val nTopic = MutableMap[Int, Int]().withDefaultValue(0)
-    val words = scala.collection.mutable.Set[String]()
+  def initializeCounters(tokenizedDocuments: Array[Array[String]], z: Array[Array[Int]], K: Int, vocab: MutableHashMap[String, Int]) = {
+    val numDocs = tokenizedDocuments.size
+    val vocabSize = vocab.size
+    val theta = DenseMatrix.zeros[Double](numDocs, K)
+    val phi = DenseMatrix.zeros[Double](K, vocabSize)
+    val topicSums = DenseVector.zeros[Double](K)
 
-    for {doc <- 0 until tokenizedDocuments.size
-         word <- 0 until tokenizedDocuments(doc).size
-    } {
-      nDocTopic(doc)(z(doc)(word)) += 1
-      nTopicWord(z(doc)(word))(tokenizedDocuments(doc)(word)) += 1
-      nTopic(z(doc)(word)) += 1
-      words.add(tokenizedDocuments(doc)(word))
+    var docI = 0
+    while(docI < numDocs){
+      var wordI = 0
+      val docSize = tokenizedDocuments(docI).size
+      while(wordI < docSize){
+        theta(docI, z(docI)(wordI)) += 1.0
+        phi(z(docI)(wordI), vocab(tokenizedDocuments(docI)(wordI))) += 1.0
+        topicSums(z(docI)(wordI)) += 1.0
+        wordI += 1
+      }
+      docI += 1
     }
-    (nDocTopic, nTopicWord, nTopic, words)
+    (theta, phi, topicSums)
   }
 
 
   def run(documents: Array[String], alpha: Double, beta: Double, K: Int) = {
-    val tokenizedDocuments = filterWords(documents.map(tokenize))
+    val (tokenizedDocuments, vocab) = buildVocab(documents.map(tokenize))
     val z = initializeZ(tokenizedDocuments, K)
-    val (nDocTopic, nTopicWord, nTopic, words) = initializeCounters(tokenizedDocuments, z, K)
-    val numWords = words.size
-    println(s"ndocTopic: $nDocTopic")
-    println(s"ntopic: $nTopic")
+    val (theta, phi, topicSums) = initializeCounters(tokenizedDocuments, z, K, vocab)
 
-    for {i <- 0 until iterations} {
-      println(i)
-      for {
-        doc <- 0 until tokenizedDocuments.size
-        nDoc = nDocTopic(doc)
-        word <- 0 until tokenizedDocuments(doc).size
-      } {
-        // lower counters
-        val oldTopic = z(doc)(word)
-        nDoc(oldTopic) -= 1
-        nTopicWord(oldTopic)(tokenizedDocuments(doc)(word)) -= 1
-        nTopic(oldTopic) -= 1
+    val vocabSize = vocab.size
+    val numDocs = tokenizedDocuments.size
 
-        val topicProbabilities = for {topic <- 0 until K} yield {
-          val prob = (nDoc(topic) + alpha) * (nTopicWord(topic)(tokenizedDocuments(doc)(word)) + beta) / (nTopic(topic) + beta * numWords)
-          topic -> prob
+    var i = 0
+    while(i < iterations) {
+      println(s"iteration: $i")
+      var docI = 0
+      while(docI < numDocs) {
+        var wordI = 0
+        val docSize = tokenizedDocuments(docI).size
+        while(wordI < docSize ){
+          val vocabIndex = vocab(tokenizedDocuments(docI)(wordI))
+
+          val docTopicRow: DenseVector[Double] = theta(docI, ::).t
+          val topicWordCol: DenseVector[Double] = phi(::, vocabIndex)
+          val params = (docTopicRow + alpha) :* (topicWordCol + beta) / (topicSums + vocabSize * beta)
+          val normalizingConstant = sum(params)
+          val normalizedParams = params / normalizingConstant
+
+          val oldTopic = z(docI)(wordI)
+
+          val newTopic = ProbabilityDistribution.drawFrom(normalizedParams)
+
+          if (oldTopic != newTopic) {
+            z(docI)(wordI) = newTopic
+            //increment counts to due to reassignment to new topic
+            phi(newTopic, vocabIndex) += 1.0
+            theta(docI, newTopic) += 1.0
+            topicSums(newTopic) += 1.0
+
+            //decrement counts of old topic assignment that has been changed
+            phi(oldTopic, vocabIndex) -= 1.0
+            theta(docI, oldTopic) -= 1.0
+            topicSums(oldTopic) -= 1.0
+          }
+          wordI += 1
         }
-        val topicProbabilitiesSum = topicProbabilities.map(_._2).sum
-        val normalizedTopicProbabilites = topicProbabilities.map{p => (p._1, p._2 / topicProbabilitiesSum)}
-//        println(normalizedTopicProbabilites.mkString("\n"))
-        val newTopic = ProbabilityDistribution.drawFrom(normalizedTopicProbabilites)
-//        val newTopic = Distribution.discrete(topicProbabilities: _*).sample(1).head
-//        if(newTopic != z(doc)(word))
-//          println(s"new Topic: $newTopic , oldTopic ${z(doc)(word)}")
-        z(doc)(word) = newTopic
-        nDoc(newTopic) += 1
-        nTopicWord(newTopic)(tokenizedDocuments(doc)(word)) += 1
-        nTopic(newTopic) += 1
+        docI +=1
       }
+      i += 1
     }
-    val pDocTopic: SortedMap[Int, MutableMap[Int, Double]] =
-      (0 until tokenizedDocuments.size).map(i => i -> MutableMap[Int, Double]().withDefaultValue(0.0))(breakOut)
-    val pTopicWord: SortedMap[Int, MutableMap[String,Double]] =
-      (0 until K).map(i => i -> MutableMap[String,Double]().withDefaultValue(0.0))(breakOut)
-
-    for {doc <- 0 until tokenizedDocuments.size
-          topic <- 0 until K
-    } {
-      pDocTopic(doc)(topic) = (nDocTopic(doc)(topic) + alpha) / ((0 until K).map { k => nDocTopic(doc)(k) + alpha}.sum)
+    //we turn the counts matrix into a probability matrix
+    var docI = 0
+    while (docI < numDocs){
+      val countToProb: DenseVector[Double] = ((theta(docI, ::) + alpha) / (sum(theta(docI, ::).t) + K * alpha)).t
+      theta(docI, ::) := countToProb.t
+      docI += 1
     }
 
-    for {word <- words
-          topic <- 0 until K
-    } yield {
-      pTopicWord(topic)(word) = (nTopicWord(topic)(word) + beta) / (nTopic(topic) + beta * numWords)
+    docI = 0
+    while (docI < numDocs){
+      val countToProb: DenseVector[Double] = ((phi(docI, ::) + alpha) / (sum(phi(docI, ::).t) + K * alpha)).t
+      phi(docI, ::) := countToProb.t
+      docI += 1
     }
 
-    (pDocTopic, pTopicWord)
-
-  }
-
-  def inferTopics(doc: String, alpha: Double, beta: Double, K: Int, pWordTopic: MutableMap[(String, Int), Double]) = {
-    val tokens = tokenize(doc)
-    val topicCounts = MutableMap[Int, Double]().withDefaultValue(0.0)
-    for {word <- tokens
-         topic <- 0 until K
-    } {
-      topicCounts(topic) += pWordTopic(word, topic)
-    }
-
-    val topicProp: Map[Int, Double] =
-      (for {topic <- 0 until K
-      } yield {
-        topic -> (topicCounts(topic) + alpha) / ((0 until K).map { k => topicCounts(k) + alpha}.sum)
-      })(breakOut)
-
-    topicProp
+    (theta, phi, vocab)
   }
 }
