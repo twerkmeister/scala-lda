@@ -154,4 +154,19 @@ class TopicModel {
 
     (theta, phi, vocab)
   }
+
+  def printTopics(phi: DenseMatrix[Double], vocab: MutableHashMap[String, Int], numWords: Int, K: Int) {
+
+    val revVocab = vocab.map(_ swap)
+
+    for (topic <- 0 until K) {
+      //tie probability to column index, then sort by probabiltiy, take the top numWords, map column index to corresponding word
+      println("Topic #" + topic + ":  " + phi(topic, ::).t.toArray.zipWithIndex.sortBy(-_._1).take(numWords).toList.map(x => revVocab(x._2)))
+    }
+  }
+
+  def printTopicProps(theta: DenseMatrix[Double], docIndex: Int, probCutoff: Double) {
+    println(theta(docIndex, ::).t.toArray.zipWithIndex.filter(x => x._1 > probCutoff).toList)
+
+  }
 }
