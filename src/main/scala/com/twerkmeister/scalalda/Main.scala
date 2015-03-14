@@ -7,8 +7,14 @@ object Main extends App {
   val folder = "/home/vegeboy/workspace/playground/articles"
   val articles = new File(folder).listFiles()
     .filter(f => f.getName().endsWith(".txt"))
-    .take(1000)
-    .map{docFile => Source.fromFile(docFile).getLines().mkString("\n")}
+    .take(10000)
+    .map{docFile =>
+      val s = Source.fromFile(docFile)
+      val content = s.getLines().mkString("\n")
+      s.close()
+      content
+    }
+
 
   val tm = new TopicModel
   val (theta, phi, vocab) = tm.run(articles, 0.01, 0.01, 100)

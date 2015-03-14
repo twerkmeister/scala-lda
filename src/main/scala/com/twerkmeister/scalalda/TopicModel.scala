@@ -88,6 +88,12 @@ class TopicModel {
     val vocabSize = vocab.size
     val numDocs = tokenizedDocuments.size
 
+    //optimization
+    theta += alpha
+    phi += beta
+    topicSums += beta * vocabSize
+
+
     var i = 0
     while(i < iterations) {
       println(s"iteration: $i")
@@ -106,7 +112,9 @@ class TopicModel {
 
           val docTopicRow: DenseVector[Double] = theta(docI, ::).t
           val topicWordCol: DenseVector[Double] = phi(::, vocabIndex)
-          val params = (docTopicRow + alpha) :* (topicWordCol + beta) / (topicSums + vocabSize * beta)
+//          val params = (docTopicRow + alpha) :* (topicWordCol + beta) / (topicSums + vocabSize * beta)
+          //adding alpha and beta optimized
+          val params = (docTopicRow) :* (topicWordCol) / (topicSums)
           val normalizingConstant = sum(params)
           val normalizedParams = params / normalizingConstant
 
@@ -123,6 +131,12 @@ class TopicModel {
       }
       i += 1
     }
+
+    //reversing optimization
+    theta -= alpha
+    phi -= beta
+    topicSums -= beta * vocabSize
+
     //we turn the counts matrix into a probability matrix
     var docI = 0
     while (docI < numDocs){
