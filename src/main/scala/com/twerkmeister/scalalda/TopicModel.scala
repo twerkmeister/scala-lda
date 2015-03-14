@@ -1,8 +1,5 @@
 package com.twerkmeister.scalalda
 
-
-import breeze.stats.distributions.Multinomial
-
 import scala.util.{Try, Random, Success, Failure}
 import breeze.linalg._
 import breeze.numerics._
