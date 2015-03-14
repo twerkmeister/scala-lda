@@ -15,9 +15,9 @@ object Main extends App {
       content
     }
 
-
+  val stopWords = Source.fromFile(new File("assets/stopwords_de.txt")).getLines().toSet
   val tm = new TopicModel
-  val (theta, phi, vocab) = tm.run(articles, 0.01, 0.01, 100)
+  val (theta, phi, vocab) = tm.run(articles, 0.01, 0.01, 100, stopWords)
   println("done")
   tm.printTopics(phi, vocab, 8, 100)
   (0 until 100).foreach { i =>

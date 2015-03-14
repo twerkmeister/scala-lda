@@ -9,18 +9,20 @@ class TopicModel {
   val iterations = 100
 
   def tokenize(document: String): Array[String] = {
-    val r = """\W"""
-    document.split(r)
+    val r = """[^\wäöüÄÖÜß]"""
+    document.split(r).filterNot(_.isEmpty).map{_.toLowerCase}
   }
 
-  def buildVocab(tokenizedDocuments: Array[Array[String]]): (Array[Array[String]], MutableHashMap[String, Int]) = {
+  def buildVocab(tokenizedDocuments: Array[Array[String]], stopWords: Set[String] = Set()): (Array[Array[String]], MutableHashMap[String, Int]) = {
     val numDocs = tokenizedDocuments.size
     val minRatio = 0.005
     val maxRatio = 0.25
 
     val words = scala.collection.mutable.Set[String]()
     val documentFrequency = MutableMap[String, Int]().withDefaultValue(0)
-    val filteredOut = scala.collection.mutable.SortedSet[String]()
+    val unfrequentWords = scala.collection.mutable.SortedSet[String]()
+    val frequentWords = scala.collection.mutable.SortedSet[String]()
+    val tooShortWords = scala.collection.mutable.SortedSet[String]()
     val vocab = MutableHashMap[String, Int]()
 
     for {doc <- tokenizedDocuments
@@ -33,15 +35,35 @@ class TopicModel {
     val documentRatio = documentFrequency.mapValues{count => count.toDouble / numDocs}
 
     words.foreach{ word =>
-//      val passes = word.size > 2 && documentRatio(word) >= minRatio && documentRatio(word) <= maxRatio
-      val passes = word.size > 2 && documentFrequency(word) > 1 && documentRatio(word) <= maxRatio
-      if(passes) vocab(word) = vocab.size
-      else filteredOut.add(word)
+      val isTooShort = word.size <= 2
+      val isTooUnfrequent = documentFrequency(word) <= 1
+      val isTooFrequent = documentRatio(word) > maxRatio
+      if(stopWords.contains(word)){
+        //do nothing
+      }else if(isTooShort){
+        tooShortWords.add(word)
+      } else if (isTooUnfrequent) {
+        unfrequentWords.add(word)
+      } else if (isTooFrequent) {
+        frequentWords.add(word)
+      } else {
+        vocab(word) = vocab.size
+      }
     }
     println(s"vocab size: ${vocab.size}")
     println("filtered out:\n===========")
-    println(filteredOut.mkString(", "))
-
+    println("stop words:")
+    println("===========")
+    println(stopWords.mkString(", "))
+    println("too Short:")
+    println("==========")
+    println(tooShortWords.mkString(", "))
+    println("too frequent:")
+    println("=============")
+    println(frequentWords.mkString(", "))
+    println("too unfrequent:")
+    println("===============")
+    println(unfrequentWords.mkString(", "))
 
     (tokenizedDocuments.map{tokens => tokens.filter{ token => vocab.contains(token)}}, vocab)
   }
@@ -77,8 +99,8 @@ class TopicModel {
   }
 
 
-  def run(documents: Array[String], alpha: Double, beta: Double, K: Int) = {
-    val (tokenizedDocuments, vocab) = buildVocab(documents.map(tokenize))
+  def run(documents: Array[String], alpha: Double, beta: Double, K: Int, stopWords: Set[String] = Set()) = {
+    val (tokenizedDocuments, vocab) = buildVocab(documents.map(tokenize), stopWords)
     val z = initializeZ(tokenizedDocuments, K)
     val (theta, phi, topicSums) = initializeCounters(tokenizedDocuments, z, K, vocab)
 
