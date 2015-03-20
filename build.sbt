@@ -9,6 +9,10 @@ libraryDependencies += "org.scalatest" %% "scalatest" % "2.2.4" % "test"
 
 libraryDependencies += "org.scalanlp" % "breeze_2.10" % "0.9"
 
+libraryDependencies += "joda-time" % "joda-time" % "2.7"
+
+
+
 resolvers += "Sonatype Releases" at "https://oss.sonatype.org/content/repositories/releases/"
 
 // Uncomment to use Akka

@@ -6,13 +6,22 @@ import breeze.numerics._
 import scala.collection.mutable.{Map => MutableMap, HashMap => MutableHashMap}
 
 class TopicModel {
-  val iterations = 100
+  val iterations = 250
 
+  /*
+  split at nonword characters and non umlauts
+  lower case words
+   */
   def tokenize(document: String): Array[String] = {
     val r = """[^\wäöüÄÖÜß]"""
-    document.split(r).filterNot(_.isEmpty).map{_.toLowerCase}
+    document.split(r).filterNot(s => s.isEmpty).map{_.toLowerCase}
   }
-
+  /*
+    filter out unwanted words
+    - stopwords
+    - short words
+    - too (in)frequent words
+   */
   def buildVocab(tokenizedDocuments: Array[Array[String]], stopWords: Set[String] = Set()): (Array[Array[String]], MutableHashMap[String, Int]) = {
     val numDocs = tokenizedDocuments.size
     val minRatio = 0.005
@@ -52,22 +61,25 @@ class TopicModel {
     }
     println(s"vocab size: ${vocab.size}")
     println("filtered out:\n===========")
-    println("stop words:")
+    println(s"stop words (${stopWords.size}):")
     println("===========")
     println(stopWords.mkString(", "))
-    println("too Short:")
+    println(s"too Short (${tooShortWords.size}):")
     println("==========")
     println(tooShortWords.mkString(", "))
-    println("too frequent:")
+    println(s"too frequent (${frequentWords.size}):")
     println("=============")
     println(frequentWords.mkString(", "))
-    println("too unfrequent:")
+    println(s"too unfrequent (${unfrequentWords.size}):")
     println("===============")
     println(unfrequentWords.mkString(", "))
 
     (tokenizedDocuments.map{tokens => tokens.filter{ token => vocab.contains(token)}}, vocab)
   }
 
+  /*
+    randomly initialize topic assignments z
+   */
   def initializeZ(tokenizedDocuments: Array[Array[String]], K: Int): Array[Array[Int]] = {
     tokenizedDocuments.map { doc =>
       doc.map { token =>
@@ -75,6 +87,14 @@ class TopicModel {
       }
     }
   }
+
+  /*
+    Initialize
+    document-topic assignment count matrix
+    word-topic assignment count matrix
+    total topic assignment vector
+    by using the randomly intialized topic assignments z
+   */
 
   def initializeCounters(tokenizedDocuments: Array[Array[String]], z: Array[Array[Int]], K: Int, vocab: MutableHashMap[String, Int]) = {
     val numDocs = tokenizedDocuments.size
@@ -98,7 +118,9 @@ class TopicModel {
     (theta, phi, topicSums)
   }
 
-
+  /*
+    Run the topic model
+   */
   def run(documents: Array[String], alpha: Double, beta: Double, K: Int, stopWords: Set[String] = Set()) = {
     val (tokenizedDocuments, vocab) = buildVocab(documents.map(tokenize), stopWords)
     val z = initializeZ(tokenizedDocuments, K)
@@ -107,7 +129,7 @@ class TopicModel {
     val vocabSize = vocab.size
     val numDocs = tokenizedDocuments.size
 
-    //optimization
+    //alpha,beta optimization
     theta += alpha
     phi += beta
     topicSums += beta * vocabSize
@@ -131,8 +153,11 @@ class TopicModel {
 
           val docTopicRow: DenseVector[Double] = theta(docI, ::).t
           val topicWordCol: DenseVector[Double] = phi(::, vocabIndex)
-//          val params = (docTopicRow + alpha) :* (topicWordCol + beta) / (topicSums + vocabSize * beta)
-          //adding alpha and beta optimized
+
+          //alpha, beta not optimized
+          //val params = (docTopicRow + alpha) :* (topicWordCol + beta) / (topicSums + vocabSize * beta)
+
+          //alpha, beta optimized
           val params = (docTopicRow) :* (topicWordCol) / (topicSums)
           val normalizingConstant = sum(params)
           val normalizedParams = params / normalizingConstant
@@ -151,12 +176,12 @@ class TopicModel {
       i += 1
     }
 
-    //reversing optimization
+    //reversing alpha,beta optimization
     theta -= alpha
     phi -= beta
     topicSums -= beta * vocabSize
 
-    //we turn the counts matrix into a probability matrix
+    //turn the document-topic assignment count matrix into a probability matrix
     var docI = 0
     while (docI < numDocs){
       val countToProb: DenseVector[Double] = ((theta(docI, ::) + alpha) / (sum(theta(docI, ::).t) + K * alpha)).t
@@ -164,6 +189,7 @@ class TopicModel {
       docI += 1
     }
 
+    //turn the word-topic assignment count matrix into a probability matrix
     var topicI = 0
     while (topicI < K){
       val countToProb: DenseVector[Double] = ((phi(topicI, ::) + alpha) / (sum(phi(topicI, ::).t) + K * alpha)).t

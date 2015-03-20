@@ -4,6 +4,8 @@ import scala.annotation.tailrec
 import scala.util.Random
 import breeze.linalg.DenseVector
 
+//Simple implementation for drawing from a probability distribution given as a vector
+//adapted from the generate() method of http://www.nltk.org/_modules/nltk/probability.html
 object ProbabilityDistribution {
   def drawFrom(probabilities : DenseVector[Double]): Int= {
 //    println(s"weightedValues: ${weightedValues.take(10).mkString("\n")}")
